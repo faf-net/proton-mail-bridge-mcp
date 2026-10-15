@@ -1,0 +1,43 @@
+# Tests bei jedem Push (seit 06.10.2026). Actions auf Commit-SHA gepinnt — ein verschobener
+# Tag kann so keinen fremden Code einschleusen; Dependabot schlägt Updates vor.
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Python 3.12 und Abhängigkeiten (nur aus uv.lock)
+        run: uv python install 3.12 && uv sync --frozen
+      - name: ruff check
+        run: uv run --frozen ruff check src scripts tests
+      - name: ruff format
+        run: uv run --frozen ruff format --check src scripts tests
+      - name: pytest (inkl. Beweistest „nie schreibend")
+        run: uv run --frozen pytest -q
+
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Bekannte Schwachstellen in den Abhängigkeiten (pip-audit)
+        run: |
+          uv export --frozen --format requirements-txt --no-dev --no-emit-project > /tmp/req.txt
+          uvx pip-audit --disable-pip -r /tmp/req.txt

@@ -1,0 +1,69 @@
+# Proton Bridge — EIGENER Stack, getrennt vom MCP.
+#
+# Warum getrennt: Jede Änderung an diesem Service erzeugt den Container bei
+# `compose up` neu. Der MCP-Stack (compose.mcp.yaml) darf beliebig oft neu gebaut
+# werden, ohne die Bridge anzufassen. Änderungen hier bewusst und selten.
+#
+# Keyring (gpg/pass) und Bridge-Vault liegen im Bind-Mount /root (siehe volumes) —
+# deshalb behielt das Recreate beim Update auf 3.27.0 am 06.10.2026 den Login
+# (gemessen). Ablauf und Rückweg: DEPLOY.md, „Betrieb“.
+#
+# Login (einmalig, interaktiv):
+#   docker compose -f compose.bridge.yaml up -d
+#   docker attach proton-bridge   -> Enter -> login -> info -> Strg-P Strg-Q
+#
+# Netze:
+#   proton_mailnet   internal, vorab angelegt: docker network create --internal proton_mailnet
+#                    Hier hört die Bridge auf 143; nur der MCP hängt auch darin.
+#   egress           eigenes Bridge-Netz für die Proton-API (Internet).
+#                    Der MCP hängt NICHT darin — lateral erreicht er nur bridge:143.
+
+name: proton-bridge
+
+services:
+  bridge:
+    build:
+      context: ..
+      dockerfile: docker/bridge.Dockerfile
+    image: proton-bridge:3.27.0-1
+    container_name: proton-bridge
+    restart: unless-stopped
+    # Echtes TTY, damit die Bridge im CLI-Modus als Dauerprozess läuft und man
+    # sich per `docker attach` einloggen kann (danach Strg-P Strg-Q, nie exit).
+    stdin_open: true
+    tty: true
+    init: true
+    # Sauberes Herunterfahren: die Bridge muss ihre Vault/Cache-Dateien
+    # schreiben. Default 10 s reichen bei laufendem Sync nicht.
+    stop_grace_period: 60s
+    environment:
+      BRIDGE_BIN: bridge
+    volumes:
+      # Kompletter Postfach-Cache + Keyring (gpg/pass). Bind-Mount statt
+      # Docker-Volume, damit er im Stack-Verzeichnis liegt (700, nur verschlüsselt sichern).
+      - ${PROTON_DATA_DIR:-../data}/bridge-data:/root
+    healthcheck:
+      # 1143 = die Bridge selbst. Bis 06.10.2026 stand hier 143 — das ist socat, das auch bei
+      # toter Bridge annimmt. Ob Mails von Proton ankommen, prüft erst /readyz im MCP.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/1143"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    mem_limit: 2g
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - mailnet
+      - egress
+
+networks:
+  mailnet:
+    external: true
+    name: proton_mailnet
+  egress:
+    driver: bridge
