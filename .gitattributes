@@ -1,0 +1,10 @@
+# Windows-Dev, Linux-Deploy: LF erzwingen, sonst zerschießt CRLF
+# das Dockerfile / den Entrypoint im Container.
+* text=auto eol=lf
+
+# Eindeutig binär — nie konvertieren
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.zip binary

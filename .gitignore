@@ -1,0 +1,29 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+.uv/
+
+# Exported mail data (never commit real mail/attachments)
+export/
+data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Laufzeitdaten der Container (Bridge-Keyring, OAuth-State) - nie ins Repo
+bridge-data/
+mcp-data/

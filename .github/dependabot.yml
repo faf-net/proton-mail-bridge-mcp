@@ -1,0 +1,28 @@
+# Wöchentliche Update-Vorschläge (seit 06.10.2026). Große Sprünge bewusst ausgenommen — sie
+# brauchen echte Arbeit, keinen Klick: mcp 2.x (pyproject pinnt <2; Fremdprojekte scheiterten
+# daran), imapclient 4.x (IMAP-Kern). ruff ist seit 06.10.2026 auf 0.16 nachgezogen; Minor-Sprünge
+# sind wieder erlaubt — neue Regeln zeigt dann die CI. Erster Vorschlag
+# (PR #1, 06.10.2026) enthielt genau diese drei und fiel im ruff-Lauf durch.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+      - dependency-name: imapclient
+        update-types: ["version-update:semver-major"]
+      - dependency-name: ruff
+        update-types: ["version-update:semver-major"]

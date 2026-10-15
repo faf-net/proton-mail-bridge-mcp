@@ -1,0 +1,96 @@
+# Read-only MCP-Server — EIGENER Stack, darf beliebig oft neu gebaut werden.
+# Die Bridge (compose.bridge.yaml) bleibt dabei unangetastet.
+#
+# Netzform: KEIN veroeffentlichter Port, auch nicht an eine Gateway-Adresse.
+# Eine Bindung an die Gateway-Adresse eines Docker-Netzes ist ein Host-Port und
+# aus JEDEM Container des Hosts erreichbar (gemessen). Deshalb tritt der MCP
+# direkt dem Netz des Agenten bei — erreichbar nur fuer dessen Mitglieder unter
+# http://proton-mcp:8080/mcp.
+#
+# Netze:
+#   proton_mailnet  internal, geteilt mit der Bridge -> bridge:143
+#   agent-net       extern, das Netz des Agenten (Name per AGENT_NETWORK)
+
+name: proton-mcp
+
+services:
+  mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: proton-mail-mcp:2026-10-06
+    container_name: proton-mcp
+    restart: unless-stopped
+    env_file:
+      # Geheimnisse und Schalter: BRIDGE_USER, BRIDGE_PASSWORD, MCP_STATIC_TOKENS,
+      # MCP_OAUTH_ENABLED. Siehe .env.example.
+      - .env
+    environment:
+      IMAP_HOST: bridge
+      IMAP_PORT: "143"
+      IMAP_TLS_VERIFY: "false"
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8080"
+      # DNS-Rebinding-Schutz: erlaubte Host-Header = der Containername im Agenten-Netz.
+      MCP_ALLOWED_HOSTS: "proton-mcp:8080"
+      OAUTH_STATE_FILE: /data/oauth_state.json
+      MAX_ATTACHMENT_MB: "10"
+      MAX_MESSAGE_MB: "50"
+      MCP_LOG_LEVEL: info
+      # anhang_ablegen: schreibt nur hierhin, Grenze 50 MB. Der Pfad, unter dem der
+      # Agent die Ablage sieht (ATTACHMENT_DROP_VIEW), kommt als pfad_konsument zurueck.
+      ATTACHMENT_DROP_DIR: /austausch/Anhänge
+      ATTACHMENT_DROP_MAX_MB: "50"
+      ATTACHMENT_DROP_VIEW: /opt/austausch
+      # Abruf-Protokoll: eine JSON-Zeile je Tool-Aufruf, nie Mailinhalt,
+      # rotierend 5 x 5 MB. Auf dem Host: <PROTON_DATA_DIR>/mcp-data/audit.jsonl
+      MCP_AUDIT_LOG: /data/audit.jsonl
+      # /readyz meldet 503, wenn in "All Mail" seit 24 h keine Mail kam: Ohne Internet nimmt
+      # die Bridge Logins weiter an (gemessen). Schwellwert an das eigene Postfach anpassen.
+      READY_FRISCHE_ORDNER: All Mail
+      READY_MAX_POST_ALTER_H: "24"
+    # ports: absichtlich KEINE (siehe Kopf)
+    volumes:
+      - ${PROTON_DATA_DIR:-../data}/mcp-data:/data
+      # Austauschordner, z. B. eine Netzfreigabe (cifs, _netdev,nofail). rslave: haengt die
+      # Freigabe erst NACH dem Containerstart ein, wird sie trotzdem sichtbar. Ohne Mount
+      # fehlt /austausch/Anhänge -> anhang_ablegen meldet "Mount fehlt", sonst nichts.
+      - type: bind
+        source: ${ATTACHMENT_HOST_DIR:-../data/austausch}
+        target: /austausch
+        bind:
+          propagation: rslave
+    read_only: true
+    # Bei einer cifs-Freigabe mit festem uid/gid (hier gid 10, 0775/0664) schreibt der
+    # Container-User (10001) ueber diese Gruppe, nicht als Eigentuemer. Anpassen.
+    group_add:
+      - "10"
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 1g
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      mailnet: {}
+      agent-net:
+        aliases: [proton-mcp]
+
+networks:
+  mailnet:
+    external: true
+    name: proton_mailnet
+  agent-net:
+    external: true
+    name: ${AGENT_NETWORK:-agent_net}
